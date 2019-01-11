@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
+  <title>Building Permit Viz</title>
+  <style>
+    html,
+    body,
+    #viewDiv {
+      padding: 0;
+      margin: 0;
+      height: 100%;
+      width: 100%;
+    }
+  </style>
+
+  <link rel="stylesheet" href="https://js.arcgis.com/4.9/esri/themes/dark-purple/main.css">
+  <script src="https://js.arcgis.com/4.9/"></script>
+
+  <script>
+    require([
+        "require",
+        "esri/Map",
+        "esri/layers/Layer",
+        "esri/layers/FeatureLayer",
+        "esri/views/MapView",
+        "esri/widgets/Legend",
+        "esri/widgets/Home",
+        "esri/widgets/Fullscreen",
+        "esri/widgets/Expand"
+      ],
+      function (
+        require,
+        Map,
+        Layer, FeatureLayer,
+        MapView,
+        Legend, Home, Fullscreen, Expand
+      ) {
+
+
+      var permit_pnts = new FeatureLayer({
+
+        portalItem: {
+
+          id: "cac453f4af1843ad9793c9f64e62ad75"
+
+        },
+
+        title: "Building Permits"
+
+      });
+
+      var map = new Map({
+
+        basemap: "dark-gray-vector",
+        layers: [ permit_pnts ]
+
+      });
+
+
+      var mapView = new MapView({
+        container: "viewDiv",
+        map: map,
+        center: [-78.482195, 38.037042],
+        zoom: 13,
+        constraints: {
+          snapToZoom: false,
+          maxZoom: 18,
+          minZoom: 12 
+        },
+        padding: {
+          top: 50,
+          bottom: 0
+        },
+        ui: {components: []}
+      });
+
+
+      // Important global variables
+      var applicationDiv = document.getElementById("applicationDiv");
+      var slider = document.getElementById("slider");
+      var sliderValue = document.getElementById("sliderValue");
+      var playButton = document.getElementById("playButton");
+      var titleDiv = document.getElementById("titleDiv");
+      var animation = null;
+
+
+      // Set up means to manipulate date differences
+      Date.prototype.addDays = function(days) {
+
+          var date = new Date(this.valueOf());
+          date.setDate(date.getDate() + days);
+          return date;
+
+      }
+
+      // When user drags the slider:
+      //  - stops the animation
+      //  - set the visualized date to the slider value.
+      function inputHandler() {
+        stopAnimation();
+        setDate(parseInt(slider.value));
+      }
+      slider.addEventListener("input", inputHandler);
+      slider.addEventListener("change", inputHandler);
+
+      // Toggle animation on/off when user
+      // clicks on the play button
+      playButton.addEventListener("click", function () {
+        if (playButton.classList.contains("toggled")) {
+          stopAnimation();
+        } else {
+          startAnimation();
+        }
+      });
+      mapView.ui.empty("top-left");
+      mapView.ui.add(titleDiv, "top-left");
+      mapView.ui.add(new Home({
+        view: mapView
+      }), "top-left");
+      mapView.ui.add(new Legend({
+        view: mapView
+      }), "bottom-left");
+      mapView.ui.add(new Fullscreen({
+        view: mapView,
+        element: applicationDiv
+      }), "top-right");
+
+
+      // Initialize the application to the earliest date in the data
+      setDate(1);
+
+  
+      //--------------------------------------------------------------------------
+      //
+      //  Helper Functions
+      //
+      //--------------------------------------------------------------------------
+      /**
+       * Sets the current visualized year.
+       */
+       function setDate(value) {
+
+        let startDate = new Date(2008, 7, 25);
+        let displayDate = startDate.addDays(value);
+        sliderValue.innerHTML = formatDate(displayDate);
+        slider.value = Math.floor(value);
+        permit_pnts.renderer = createRenderer(value);
+
+      }
+
+      function formatDate(d) {
+
+        let month = (d.getMonth() < 9) ? '0' + (d.getMonth() + 1) : d.getMonth() + 1;
+        let day = (d.getDate() < 10) ? '0' + d.getDate() : d.getDate();
+        let year = d.getFullYear();
+
+        return month + '/' + day + '/' + year;
+
+      }
+
+      function createRenderer(day) {
+
+          var opacityStops = [{
+            opacity: 0.05,
+            value: day - 365
+          }, {
+            opacity: 0.25,
+            value: day - 90
+          }, {
+            opacity: 0.35,
+            value: day - 30
+          }, {
+            opacity: 0.75,
+            value: day - 5
+          },{
+            opacity: 1,
+            value: day
+          },{
+            opacity: 0.0,
+            value: day + 1
+          }];
+
+
+          var sizeStops = [{
+            value: 100000,  // features with a valuation < $100,000
+            size: 4,  // will be assigned a marker with this size in pts
+            label: "less than $100,000"  // label to display in the legend
+          }, {
+            value: 500000,  
+            size: 16, 
+            label: "$500,000"  
+          }, {
+            value: 1000000,  
+            size: 24,  
+            label: "$1,000,000"  
+          }, {
+            value: 10000000,  // features with a valuation > $10,000,000 
+            size: 36,  // will be assigned a marker with this size in pts
+            label: "more than $10,000,000"  // label to display in the legend
+          }];
+
+          // return a new renderer with the calculated opacity visual variable
+          return {
+            type: "simple", // autocasts as new SimpleRenderer()
+            // Define a default marker symbol with a small outline
+            symbol: {
+              type: "simple-marker", // autocasts as new SimpleMarkerSymbol()
+              color: [ 230, 150, 255 ],
+              outline: { // autocasts as new SimpleLineSymbol()
+                color: [ 255, 255, 255, 0 ],
+                width: 1
+              }
+            },
+            visualVariables: [{
+              type: "opacity",
+              field: "Day",
+              stops: opacityStops,
+              legendOptions: {
+                showLegend: false
+              }
+            }, {
+              type: "size",
+              field: "Valuation",
+              stops: sizeStops
+            }]
+          };
+
+        }
+
+     /**
+       * Starts the animation cycle
+       */
+        function startAnimation() {
+            stopAnimation();
+            animation = animate(parseFloat(slider.value));
+            playButton.classList.add("toggled");
+        }
+        /**
+         * Stops the animations
+         */
+        function stopAnimation() {
+            if (!animation) {
+            return;
+            }
+            animation.remove();
+            animation = null;
+            playButton.classList.remove("toggled");
+        }
+
+     /**
+       * Animates the visual variables continously
+       */
+      function animate(startValue) {
+        var animating = true;
+        var value = startValue;
+        var frame = function (timestamp) {
+          if (!animating) {
+            return;
+          }
+          value += 1;
+          if (value > 3075) {
+            value = 0;
+          }
+          setDate(value);
+          // Update at 30fps
+          setTimeout(function () {
+            requestAnimationFrame(frame);
+          }, 1000 / 30);
+        };
+
+        frame();
+
+        return {
+          remove: function () {
+            animating = false;
+          }
+        };
+      }
+    });
+
+  </script>
+
+    <style>
+        html,
+        body {
+        width: 100%;
+        height: 100%;
+        padding: 0;
+        margin: 0;
+        }
+        #applicationDiv {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        }
+        #viewDiv {
+        width: 100%;
+        height: 100%;
+        flex: 1 1 auto;
+        order: 1;
+        }
+        #titleDiv {
+        font-weight: 400;
+        font-style: normal;
+        font-size: 1.2019rem;
+        padding: 10px;
+        }
+        #sliderContainer {
+        flex: 0 0 80px;
+        order: 2;
+        display: flex;
+        flex-flow: row;
+        padding: 0 12px;
+        }
+        #sliderValue {
+        flex: 0 0 100px;
+        order: 1;
+        display: flex;
+        justify-content: center;
+        flex-direction: column;
+        text-align: center;
+        font-size: 300%;
+        }
+        #sliderInnerContainer {
+        flex: 1 1 auto;
+        order: 2;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: 0 20px;
+        }
+        #sliderLabels {
+        flex: 1 1 auto;
+        order: 1;
+        display: flex;
+        justify-content: space-between;
+        margin-top: 20px;
+        }
+        #rangeWrapper {
+        flex: 1 1 auto;
+        order: 2;
+        position: relative;
+        padding: 0 20px;
+        }
+        #slider {
+        width: 100%;
+        }
+        /**
+        * Play/Stop toggle button
+        */
+        #playButton {
+        flex: 0 0 100px;
+        order: 3;
+        margin: 20px 0;
+        }
+        .toggle-button {
+        display: flex;
+        }
+        .toggle-button.toggled .toggle-button-icon {
+        color: #CC1B1B;
+        }
+        .toggle-button .toggle-button-icon {
+        color: #1BCC1B;
+        }
+        .toggle-button> :nth-child(2) {
+        display: none;
+        }
+        .toggle-button.toggled> :nth-child(1) {
+        display: none;
+        }
+        .toggle-button.toggled> :nth-child(2) {
+        display: block;
+        }
+        /**
+        * Hover tooltip
+        */
+        .tooltip {
+        position: absolute;
+        pointer-events: none;
+        transition: opacity 200ms;
+        }
+        .tooltip>div {
+        margin: 0 auto;
+        padding: 12px;
+        border-radius: 4px;
+        box-shadow: 0px 0px 4px rgba(255, 255, 255, 0.75);
+        transform: translate3d(-50%, -125%, 0);
+        }
+    </style>
+
+</head>
+
+<body>
+    <div id="applicationDiv">
+      <div id="viewDiv">
+        <div id="titleDiv" class="esri-widget">Charlottesville Building Permits Through Time</div>
+      </div>
+      <div id="sliderContainer" class="esri-widget">
+        <span id="sliderValue"></span>
+        <div id="sliderInnerContainer">
+          <div id="sliderLabels">
+            <span>8/26/08</span>
+            <span>10/17/18</span>
+          </div>
+          <div id="rangeWrapper">
+            <input id="slider" type="range" min="1" max="2018" step="1" value="2000" />
+          </div>
+        </div>
+        <div id="playButton" class="esri-widget esri-widget--button toggle-button">
+          <div>
+            <span class="toggle-button-icon esri-icon-play" aria-label="play icon"></span>
+            Play</div>
+          <div>
+            <span class="toggle-button-icon esri-icon-pause" aria-label="pause icon"></span>
+            Pause</div>
+        </div>
+      </div>
+    </div>
+  </body>
+  
+</html>
